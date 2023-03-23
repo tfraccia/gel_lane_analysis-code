@@ -1,0 +1,328 @@
+clear all;
+close all;
+
+
+range_x='A2'; % x column
+range_y='B2'; % y column
+range_p='A2';
+
+exp_tipe='ladder';
+flory_exp_tipe='flory_ladder';
+flory_cum_exp_tipe='flory_cum_ladder';
+
+%input profile plot data from excel file
+data_input = readmatrix('gels_D15_D12.xlsx', 'Sheet', exp_tipe,'Range','B2:B1800');
+% numero di files meno uno
+
+nfiles=0;
+
+filename='lb';
+
+figure (1)
+datacursormode on;
+plot(data_input);
+hold on;
+
+uiwait(msgbox('Select initial point','ciao!','modal'));
+inizio = round(ginput(1));
+uiwait(msgbox('Select final point','ciao!','modal'));
+fine = round(ginput(1));
+
+
+i=0;
+for i=inizio(1):fine(1)
+   data(i-inizio(1)+1)=data_input(i);
+end
+
+n=length(data);
+
+%------------------------------------------------------------------------
+
+% BASELINE CORRECTION
+
+inizio(2)=data(1);
+fine(2)=data(n);
+
+baseline_m=(fine(2)-inizio(2))/(fine(1)-inizio(1));
+baseline_q=inizio(2)-baseline_m*inizio(1);
+
+for i=1:n
+    %baseline(i)=baseline_m*i+baseline_q;
+    baseline(i)=data(1);
+    data(i)=data(i)-baseline(i);
+end
+
+plot(data, 'red');
+
+% TRESHOLD
+
+uiwait(msgbox('Select baseline','ciao!','modal'));
+treshold = round(ginput(1));
+
+for i=1:n
+    data(i)=data(i)-treshold(2);
+    if data(i)<0;
+        data(i)=0;
+    end
+    x(i)=i;
+end
+
+close (1);
+
+%------------------------------------------------------------------------
+%---------data selection end
+%------------------------------------------------------------------------
+
+datas=smooth(data, 25, 'sgolay', 1);
+
+data=(data-min(data))/(max(data)-min(data));
+datas=(datas-min(datas))/(max(datas)-min(datas));
+
+data_diff=diff(data);
+data_sum=sum(data);
+
+data_int=cumsum(data)/data_sum;
+
+% search of maxima
+
+i=1;
+for j=2:n-1
+    if datas(j)>0 && datas(j)>datas(j-1) && datas(j)>datas(j+1);
+        x_peaks(i)=j;
+        z_peaks(i)=datas(j);
+        n_peaks(i)=i;
+        y_peaks(i)=log(i);
+        i=i+1;
+    end
+end
+
+%zero=x_peaks(1);
+%x_peaks=x_peaks-x_peaks(1);
+k=length(x_peaks);
+
+% first peak
+u=0;
+x1=0;
+z1=0;
+
+%set the minimum acceptable z peaks (values between 0 and 1), this value
+%should be lower than first peak but higher than other peaks appearing
+%before it
+
+for j=1:k
+    if x_peaks(j)<1000 && z_peaks(j)>0.17;
+        x1=x1+x_peaks(j);
+        z1=z1+z_peaks(j);
+        u=u+1;
+    end
+end
+
+xt(1)=0;
+yt(1)=0;
+zt(1)=z1/u;
+
+zero=x1/u;
+x_peaks=x_peaks-zero;
+
+% searching the peaks to fit
+i=2;
+for j=u+1:k
+    % second set of peaks, index i, and treshold value z_peaks
+    if i>1 && i<5 && z_peaks(j)>0.5;
+        xt(i)=x_peaks(j);
+        yt(i)=log(i);
+        zt(i)=z_peaks(j);
+        i=i+1;
+        
+    % third set of peaks, index i, and treshold value z_peaks
+    elseif i>=6 && i<9 && z_peaks(j)>0.99;% && z_peaks(j)<0.95;
+          
+        xt(i)=x_peaks(j);
+        yt(i)=log(i);
+        zt(i)=z_peaks(j);
+        i=i+1;
+        
+    % other peaks
+    elseif i>90 && x_peaks(j)-xt(i-1)>x_peaks(j+1)-x_peaks(j);
+        %if z_peaks(j)>z_peaks(j-1) || z_peaks(j)>x_peaks(j+1);
+        x=transpose(xt);
+        y=transpose(yt);
+        [u,gof]=fit(x,y,'a*x');
+        x(i)=x_peaks(j);
+        y(i)=log(i);
+        [u1,gof1]=fit(x,y,'a*x');
+        x(i)=x_peaks(j+1);
+        %,'Exclude', x(2)
+        [u2,gof2]=fit(x,y,'a*x');
+            if gof1.rmse<gof.rmse && gof1.adjrsquare>gof.adjrsquare && gof1.rmse<gof2.rmse && gof1.adjrsquare>gof2.adjrsquare;
+            
+                xt(i)=x_peaks(j);
+                yt(i)=log(i);
+                zt(i)=z_peaks(j);
+                i=i+1;
+            end
+        %end
+   end
+end
+
+x=transpose(xt);
+y=transpose(yt);
+[u,gof]=fit(x,y,'a*x');
+
+x_punti=x_peaks+zero;
+xt_punti=xt+zero;
+
+figure
+plot(data, 'black');
+hold on;
+plot(datas, 'red');
+hold on;
+scatter(x_punti, z_peaks, 'filled');
+hold on;
+scatter(xt_punti, zt, 'filled');
+
+
+
+figure
+scatter(x_peaks, y_peaks, 'filled', 'blue');
+hold on;
+scatter(x, y, 'filled', 'red');
+hold on;
+plot(u);
+
+
+% PART 2
+
+[f,gof]=fit(x,y,'a*x');
+
+for j=1:n
+    x_plot(j)=exp(f.a*(j-zero));
+end
+
+x_final=round(max(x_plot));
+
+%datazero=0;
+%for j=1:n
+ %   i_plot(j)=round(x_plot(j))
+  %  for i=1:x_final
+   %     if i_plot(j)==i;
+    %        datasum(i)=datazero+data(j);
+     %       datazero=datasum(i);
+      %      xf(i)=i;
+   % end
+   % end
+%end
+%datasum=datasum/max(datasum);
+
+% data distribution (d_dist) and data cumulative distribution (datasum)
+
+for j=1:n
+    i_plot_d(j)=round(x_plot(j))
+end
+
+d_zero(1:x_final)=0;
+
+for i=1:x_final
+    for j=1:n
+        if i_plot_d(j)==i;
+            d_dist(i)=d_zero(i)+data(j);
+            d_zero(i)=d_dist(i);
+           
+    end
+    end
+    
+    xf(i)=i;
+    datasum(i)=sum(d_dist);
+end
+d_dist=d_dist/sum(d_dist);
+datasum=datasum/max(datasum);
+
+x_d=transpose(xf);
+y_d=transpose(d_dist);
+
+[flo,gof]=fit(x_d,y_d,'x*(p^(x-1))*(1-p)^2');
+
+y_cd=transpose(datasum);
+
+[c_flo,gof]=fit(x_d,y_cd,'1-p^x-x*p^x+x*p^(1+x)');
+
+
+figure
+scatter(xf, d_dist);
+hold on;
+plot(flo);
+
+uiwait(msgbox(['p flory distr = ' num2str(flo.p)],'ciao!','modal'));
+
+figure
+scatter(xf, datasum);
+hold on;
+plot(c_flo);
+
+uiwait(msgbox(['p flory cumu distr = ' num2str(c_flo.p)],'ciao!','modal'));
+
+p1=1-sqrt(datasum(1));
+
+p_par(1:3)=[flo.p,c_flo.p,p1];
+
+% flory
+
+p=mean(p_par);
+p_err=std(p_par);
+p_sd=100*std(p_par)/p;
+yflo=0;
+for i=1:x_final
+    w(i)=i*(p^(i-1))*(1-p)^2;
+    yf(i)=yflo+w(i);
+    yflo=yf(i);
+end
+
+x_plot_mod=x_plot-0.5;
+
+figure (111)
+plot(x_plot_mod, data_int);
+hold on;
+plot(x_plot, data, 'black');
+hold on;
+scatter(xf, datasum, 'blue');
+hold on;
+scatter(xf, yf, 'filled', 'red');
+grid on;
+axh = gca;
+set(axh,'XTick',[0:1:x_final]);
+xlim([0 x_final+1]);
+
+uiwait(msgbox({['p first peak = ' num2str(p1)] ['p mean = ' num2str(p)] ['p std = ' num2str(p_sd) '%']},'ciao!','modal'));
+
+x_plot_s=transpose(x_plot);
+datas_s=transpose(datas);
+x_plot_mod_s=transpose(x_plot_mod);
+data_int_s=transpose(data_int);
+save('00_profile_x.dat','x_plot_s','-ascii','-tabs');
+save('00_profile_y.dat', 'data','-ascii','-tabs');
+save('00_integral_x.dat','x_plot_mod_s','-ascii','-tabs');
+save('00_integral_y.dat', 'data_int_s','-ascii','-tabs');
+save('00_flory_x.dat','x_d','-ascii','-tabs');
+save('00_flory_y.dat', 'y_d', '-ascii','-tabs');
+save('00_flory_cum_y.dat', 'y_cd','-ascii','-tabs');
+
+writematrix(x_plot_s,'results.xlsx','Sheet',exp_tipe,'Range',range_x);
+writematrix(data_s,'results.xlsx','Sheet',exp_tipe,'Range',range_y); %con 1 mettere data_s, con 0 mettere data
+writematrix(x_d,'results.xlsx','Sheet',flory_exp_tipe,'Range',range_x);
+writematrix(y_d,'results.xlsx','Sheet',flory_exp_tipe, 'Range',range_y);
+writematrix(x_d,'results.xlsx','Sheet',flory_cum_exp_tipe, 'Range',range_x);
+writematrix(y_cd,'results.xlsx','Sheet',flory_cum_exp_tipe, 'Range',range_y);
+
+for i=1:x_final
+    media(i)=xf(i)*d_dist(i);
+    media2(i)=d_dist(i)/xf(i);1
+end
+length1(1:nfiles+1)=0;
+length2(1:nfiles+1)=0;
+length1(nfiles+1)=sum(media)/sum(d_dist);
+length2(nfiles+1)=sum(d_dist)/sum(media2);
+
+
+ave(1:nfiles+1)=0;
+ave(nfiles+1)=length1(nfiles+1);
+%% writematrix(M,'results_D12_D15.xlsx','Sheet','D12_dark','Range','B2:')
